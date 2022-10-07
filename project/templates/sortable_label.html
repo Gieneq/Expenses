@@ -1,0 +1,9 @@
+<div>
+    {{label}}
+</div>
+{% if sorting %}
+<div>
+    <button type="button" onclick="location.href='?order_by={{ label }}_asc'">ASC /\</button>
+    <button type="button" onclick="location.href='?order_by={{ label }}_dsc'">DSC \/</button>
+</div>
+{% endif %}

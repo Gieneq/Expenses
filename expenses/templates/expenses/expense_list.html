@@ -10,14 +10,14 @@
 </form>
 <br>
 <table border="1">
-	<caption>Expenses</caption>
+	<caption>Expenses {{ context.quer }} </caption>
 	<thead>
 	  <tr>
 		<th>no.</th>
-		<th>category</th>
+		<th>{% include 'sortable_label.html' with label='category' sorting=True %}</th>
 		<th>name</th>
 		<th>amount</th>
-		<th>date</th>
+		<th>{% include 'sortable_label.html' with label='date' sorting=True %}</th>
 		<th>actions</th>
 	  </tr>
 	</thead>
