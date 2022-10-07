@@ -1,9 +1,9 @@
 <div>
     {{label}}
 </div>
-{% if sorting %}
+{% if controllers %}
 <div>
-    <button type="button" onclick="location.href='?order_by={{ label }}_asc'">ASC /\</button>
-    <button type="button" onclick="location.href='?order_by={{ label }}_dsc'">DSC \/</button>
+    <button type="button" onclick="location.href='?order_by=-{{ label }}&{{ parameters }}'" {% if '-'|add:label in ordering %} disabled {% endif %}>ASC /\</button>
+    <button type="button" name='sorter' onclick="location.href='?order_by={{ label }}&{{ parameters }}'" {% if not '-'|add:label in ordering  and label in ordering%} disabled {% endif %}>DSC \/</button>
 </div>
 {% endif %}

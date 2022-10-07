@@ -1,3 +1,4 @@
+from django.http import QueryDict
 from django.views.generic.list import ListView
 
 from .forms import ExpenseSearchForm
@@ -13,6 +14,7 @@ class ExpenseListView(ListView):
         query_params = self.request.GET
         print('$GET$', query_params)
         print('$kwargs$', kwargs)
+
         queryset = object_list if object_list is not None else self.object_list
 
         form = ExpenseSearchForm(query_params)
@@ -20,7 +22,7 @@ class ExpenseListView(ListView):
             cdata = form.cleaned_data
             print('-->', cdata)
 
-            # Ordering
+            # Filtering
             name = cdata.get('name', '').strip()
             if name:
                 queryset = queryset.filter(name__icontains=name)
@@ -36,27 +38,28 @@ class ExpenseListView(ListView):
             # FIXME not working with pagination and ordering
             # queryset = queryset.filter(category__id__in=categories)
 
-        # Ordering after any forms inputs
-        order_by = query_params.get('order_by', '')
-        print(order_by)
+        parameters = query_params.copy()
+        parameters.pop('page', True)
 
-        if order_by:
-            DIR_CHARS = 4
-            field_name = order_by[:-DIR_CHARS]
-            direction = '' if order_by[-DIR_CHARS+1:].lower() == 'asc' else '-'
-            # print(field_name, direction)
-            queryset = queryset.order_by(f"{direction}{field_name}")
+        ordering = query_params.copy()
+        ordering.clear()
+        if 'order_by' in parameters:
+            ordering['order_by'] = parameters.pop('order_by')[0]
 
-
-        # context = {'quer': self.request.GET}
-        # print(form)
+        print(parameters)
+        print(ordering)
 
         return super().get_context_data(
-            # context=context,
+            parameters=parameters.urlencode(),
+            ordering=ordering.urlencode(),
             form=form,
             object_list=queryset,
             summary_per_category=summary_per_category(queryset),
             **kwargs)
+
+    def get_ordering(self):
+        order_by = self.request.GET.get('order_by', '')
+        return order_by
 
 
 class CategoryListView(ListView):

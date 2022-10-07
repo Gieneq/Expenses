@@ -10,19 +10,18 @@
 </form>
 <br>
 <table border="1">
-	<caption>Expenses {{ context.quer }} </caption>
+	<caption>Expenses</caption>
 	<thead>
 	  <tr>
 		<th>no.</th>
-		<th>{% include 'sortable_label.html' with label='category' sorting=True %}</th>
+		<th>{% include 'sortable_label.html' with parameters=parameters ordering=ordering label='category' controllers=True %}</th>
 		<th>name</th>
 		<th>amount</th>
-		<th>{% include 'sortable_label.html' with label='date' sorting=True %}</th>
+		<th>{% include 'sortable_label.html' with parameters=parameters ordering=ordering label='date' controllers=True %}</th>
 		<th>actions</th>
 	  </tr>
 	</thead>
 	<tbody>
-
 	{% for obj in object_list %}
 	  <tr>
 		<td>{{ page_obj.start_index|add:forloop.counter0 }}.</td>
@@ -43,7 +42,7 @@
 	</tbody>
 </table>
 
-{% include "_pagination.html" %}
+{% include "_pagination.html" with parameters=parameters ordering=ordering%}
 <hr>
 <table border="1">
   <caption>Summary per category</caption>
