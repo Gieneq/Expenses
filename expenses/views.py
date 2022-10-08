@@ -3,7 +3,7 @@ from django.views.generic.list import ListView
 
 from .forms import ExpenseSearchForm
 from .models import Expense, Category
-from .reports import summary_per_category
+from .reports import summary_per_category, total_amount_spent
 
 
 class ExpenseListView(ListView):
@@ -12,8 +12,8 @@ class ExpenseListView(ListView):
 
     def get_context_data(self, *, object_list=None, **kwargs):
         query_params = self.request.GET
-        print('$GET$', query_params)
-        print('$kwargs$', kwargs)
+        # print('$GET$', query_params)
+        # print('$kwargs$', kwargs)
 
         queryset = object_list if object_list is not None else self.object_list
 
@@ -35,8 +35,9 @@ class ExpenseListView(ListView):
                 queryset = queryset.filter(date__lt=to_date)
 
             categories = cdata.get('categories')
+            # print(categories)
             # FIXME not working with pagination and ordering
-            # queryset = queryset.filter(category__id__in=categories)
+            queryset = queryset.filter(category__id__in=categories)
 
         parameters = query_params.copy()
         parameters.pop('page', True)
@@ -46,15 +47,18 @@ class ExpenseListView(ListView):
         if 'order_by' in parameters:
             ordering['order_by'] = parameters.pop('order_by')[0]
 
-        print(parameters)
-        print(ordering)
+        # print(parameters)
+        # print(ordering)
+        summary = summary_per_category(queryset)
+        print('--summary-->>', summary)
 
         return super().get_context_data(
             parameters=parameters.urlencode(),
             ordering=ordering.urlencode(),
             form=form,
             object_list=queryset,
-            summary_per_category=summary_per_category(queryset),
+            summary_per_category=summary,
+            total_amount_spent=total_amount_spent(summary),
             **kwargs)
 
     def get_ordering(self):
