@@ -3,7 +3,7 @@ from django.views.generic.list import ListView
 
 from .forms import ExpenseSearchForm
 from .models import Expense, Category
-from .reports import summary_per_category, total_amount_spent
+from .reports import summary_per_category, total_amount_spent, summary_per_year_month
 
 
 class ExpenseListView(ListView):
@@ -49,15 +49,20 @@ class ExpenseListView(ListView):
 
         # print(parameters)
         # print(ordering)
-        summary = summary_per_category(queryset)
-        print('--summary-->>', summary)
 
+        summary_ym = summary_per_year_month(queryset)
+
+        print('--summary YM-->>', summary_ym)
+
+        summary = summary_per_category(queryset)
+        print('--summary C-->>', summary)
         return super().get_context_data(
             parameters=parameters.urlencode(),
             ordering=ordering.urlencode(),
             form=form,
             object_list=queryset,
             summary_per_category=summary,
+            summary_per_year_month=summary_ym,
             total_amount_spent=total_amount_spent(summary),
             **kwargs)
 

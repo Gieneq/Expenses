@@ -57,6 +57,61 @@
 </table>
 <hr>
 <p>Total amount spent: {{total_amount_spent|floatformat:2}}</p>
+<hr>
+<table border="1">
+  <caption>Summary per year-month (horizontal grow)</caption>
+  <thead>
+    <tr>
+	  <th>Year</th>
+	  {% for year, details in summary_per_year_month.items %}
+		<th colspan="{{ details.months|length }}">{{ year }}</th>
+	  {% endfor %}
+    </tr>
+  </thead>
+  <tr>
+    <th>Month</th>
+	{% for year, details in summary_per_year_month.items %}
+	  {% for month, total in details.months %}
+		<td>{{ month }}</td>
+	  {% endfor %}
+	{% endfor %}
+  </tr>
+  <tr>
+	<th>Month total</th>
+	{% for year, details in summary_per_year_month.items %}
+	  {% for month, total in details.months %}
+		<td>{{ total|floatformat:2 }}</td>
+	  {% endfor %}
+	{% endfor %}
+  </tr>
+  <tr>
+	<th>Year total</th>
+	{% for year, details in summary_per_year_month.items %}
+	  <td colspan="{{ details.months|length }}">{{ details.total|floatformat:2 }}</td>
+	{% endfor %}
+  </tr>
+</table>
+<br>
 
 
+<table border="1">
+  <caption>Summary per year-month (vertical grow) </caption>
+  {% for year, details in summary_per_year_month.items %}
+	<tr>
+	  <th rowspan="{{ details.months|length|add:2 }}">{{year}}</th>
+	  <th>Month</th>
+	  <th>Total</th>
+	</tr>
+  {% for month, total in details.months %}
+	<tr>
+	  <td>{{ month }}</td>
+	  <td>{{ total|floatformat:2 }}</td>
+	</tr>
+  {% endfor %}
+  <tr>
+	<th>Per year:</th>
+	<td>{{ details.total|floatformat:2 }}</td>
+  </tr>
+  {% endfor %}
+</table>
 {% endblock %}
