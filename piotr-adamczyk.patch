@@ -1,0 +1,459 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..10f58eb
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,6 @@
++/venv/
++/db.sqlite3
++.idea
++.idea/
++*/__pycache__/
++*/*/__pycache__/
+\ No newline at end of file
+diff --git a/expenses/forms.py b/expenses/forms.py
+index 0ad77c0..1dd3c78 100644
+--- a/expenses/forms.py
++++ b/expenses/forms.py
+@@ -1,12 +1,27 @@
++from collections import OrderedDict
++
+ from django import forms
+-from .models import Expense
++from .models import Expense, Category
+ 
+ 
+ class ExpenseSearchForm(forms.ModelForm):
++    _MIN_YEAR, _MAX_YEAR = 1980, 2022
++    from_date = forms.DateField(required=False, widget=forms.SelectDateWidget(years=range(_MIN_YEAR, _MAX_YEAR + 1)))
++    to_date = forms.DateField(required=False, widget=forms.SelectDateWidget(years=range(_MAX_YEAR, _MIN_YEAR - 1, -1)))
++    categories = forms.MultipleChoiceField(required=False, widget=forms.CheckboxSelectMultiple)
++
+     class Meta:
+         model = Expense
+-        fields = ('name',)
++        fields = ('name', 'from_date', 'to_date', 'categories')
+ 
+     def __init__(self, *args, **kwargs):
+         super().__init__(*args, **kwargs)
+         self.fields['name'].required = False
++        self.fields['categories'].choices = ExpenseSearchForm.category_choices().items()
++
++    @staticmethod
++    def category_choices():
++        """
++        Dynamically retrieve choices OrderedDict for Category Selection Choice Fields and similar.
++        """
++        return OrderedDict([(category.id, category.name) for category in Category.objects.order_by('name')])
+diff --git a/expenses/models.py b/expenses/models.py
+index 5aaaece..97ebded 100644
+--- a/expenses/models.py
++++ b/expenses/models.py
+@@ -16,7 +16,7 @@ class Expense(models.Model):
+     class Meta:
+         ordering = ('-date', '-pk')
+ 
+-    category = models.ForeignKey(Category, models.PROTECT, null=True, blank=True)
++    category = models.ForeignKey(Category, models.PROTECT, null=True, blank=True, related_name='expenses')
+ 
+     name = models.CharField(max_length=50)
+     amount = models.DecimalField(max_digits=8, decimal_places=2)
+diff --git a/expenses/reports.py b/expenses/reports.py
+index 764f992..b0b7af4 100644
+--- a/expenses/reports.py
++++ b/expenses/reports.py
+@@ -1,16 +1,80 @@
+ from collections import OrderedDict
++from functools import reduce
+ 
+ from django.db.models import Sum, Value
+ from django.db.models.functions import Coalesce
+ 
+ 
++def to_ordered_dict(it_of_tuples):
++    """Converts and sorts list of tuples to OrderedDict.
++    Regular dict should be fine, since Python 3.7 it preserves insertion order."""
++    return OrderedDict(sorted(it_of_tuples))
++
++
+ def summary_per_category(queryset):
+-    return OrderedDict(sorted(
++    return to_ordered_dict(
+         queryset
+         .annotate(category_name=Coalesce('category__name', Value('-')))
+         .order_by()
+         .values('category_name')
+         .annotate(s=Sum('amount'))
+         .values_list('category_name', 's')
+-    ))
++    )
++
++
++def total_amount_spent_using_dict(summary_dict):
++    """
++    Returns summary of all Expenses based on result of summary_per_category function (should be faster).
++    See total_amount_spent for queryset based alternative.
++    """
++    return sum(summary_dict.values())
++
++
++def total_amount_spent(queryset):
++    """
++    Returns summary of all Expenses based on Expenses queryset.
++    """
++    return queryset.aggregate(total_amount_spent=Sum('amount'))['total_amount_spent']
++
++
++def summary_per_year_month(queryset):
++    """
++    Returns OrderedDict of key-value pairs:
++    {year: {'total': amount spent per year, 'months' : list of months numbers like [1,3,12]}}
++    """
++    result_qs = queryset.annotate(year=Coalesce('date__year', Value(0)),
++                                  month=Coalesce('date__month', Value(0))).order_by()
++    result_qs = result_qs.values('year', 'month').annotate(total=Sum('amount'))
++    result_qs = result_qs.values_list('year', 'month', 'total')
++
++    result = dict()
++    for year, month, total in result_qs:
++        result.setdefault(year, []).append((month, total))
++
++    result = to_ordered_dict(
++        ((year, {'total': reduce(lambda a, b: a + b[1], months_totals, 0), 'months': months_totals}) for
++         year, months_totals in result.items()))
++
++    return result
++
++
++def summary_per_year(queryset):
++    """
++    Returns OrderedDict of key-value pairs: {year: amount spent per year}.
++    """
++    return to_ordered_dict(queryset.annotate(year=Coalesce('date__year', Value(0))).order_by().values('year').annotate(
++        s=Sum('amount')).values_list('year', 's'))
++
+ 
++def expenses_summary(queryset):
++    """
++    Return summary of expenses
++    :param queryset: prefiltered queryset of Expenses.
++    :return: dict of summaries: per_year_month, per_category, total.
++    """
++    s_per_categories = summary_per_category(queryset)
++    return {
++        'per_year_month': summary_per_year_month(queryset),
++        'per_category': s_per_categories,
++        'total': total_amount_spent_using_dict(s_per_categories)
++    }
+diff --git a/expenses/templates/expenses/category_list.html b/expenses/templates/expenses/category_list.html
+index 3fa249e..68d360f 100644
+--- a/expenses/templates/expenses/category_list.html
++++ b/expenses/templates/expenses/category_list.html
+@@ -7,6 +7,7 @@
+ 	<thead>
+ 		<tr>
+ 			<th>name</th>
++			<th>expenses</th>
+ 			<th>actions</th>
+ 		</tr>
+ 	</thead>
+@@ -17,6 +18,10 @@
+ 				{{obj.name}}
+ 			</td>
+ 			<td>
++				{{ obj.expenses.count }}
++			</td>
++			<td>
++				<a href="{% url 'expenses:category-edit' obj.id %}">edit</a>
+ 				<a href="{% url 'expenses:category-delete' obj.id %}">delete</a>
+ 			</td>
+ 		</tr>
+diff --git a/expenses/templates/expenses/expense_list.html b/expenses/templates/expenses/expense_list.html
+index d15d582..7f81f97 100644
+--- a/expenses/templates/expenses/expense_list.html
++++ b/expenses/templates/expenses/expense_list.html
+@@ -14,15 +14,14 @@
+ 	<thead>
+ 	  <tr>
+ 		<th>no.</th>
+-		<th>category</th>
++		<th>{% include 'sortable_label.html' with parameters=parameters ordering=ordering label='category' controllers=True %}</th>
+ 		<th>name</th>
+ 		<th>amount</th>
+-		<th>date</th>
++		<th>{% include 'sortable_label.html' with parameters=parameters ordering=ordering label='date' controllers=True %}</th>
+ 		<th>actions</th>
+ 	  </tr>
+ 	</thead>
+ 	<tbody>
+-
+ 	{% for obj in object_list %}
+ 	  <tr>
+ 		<td>{{ page_obj.start_index|add:forloop.counter0 }}.</td>
+@@ -43,7 +42,7 @@
+ 	</tbody>
+ </table>
+ 
+-{% include "_pagination.html" %}
++{% include "_pagination.html" with parameters=parameters ordering=ordering%}
+ <hr>
+ <table border="1">
+   <caption>Summary per category</caption>
+@@ -56,4 +55,63 @@
+ 	{% endfor %}
+   </tr>
+ </table>
++<hr>
++<p>Total amount spent: {{total_amount_spent|floatformat:2}}</p>
++<hr>
++<table border="1">
++  <caption>Summary per year-month (horizontal grow)</caption>
++  <thead>
++    <tr>
++	  <th>Year</th>
++	  {% for year, details in summary_per_year_month.items %}
++		<th colspan="{{ details.months|length }}">{{ year }}</th>
++	  {% endfor %}
++    </tr>
++  </thead>
++  <tr>
++    <th>Month</th>
++	{% for year, details in summary_per_year_month.items %}
++	  {% for month, total in details.months %}
++		<td>{{ month }}</td>
++	  {% endfor %}
++	{% endfor %}
++  </tr>
++  <tr>
++	<th>Month total</th>
++	{% for year, details in summary_per_year_month.items %}
++	  {% for month, total in details.months %}
++		<td>{{ total|floatformat:2 }}</td>
++	  {% endfor %}
++	{% endfor %}
++  </tr>
++  <tr>
++	<th>Year total</th>
++	{% for year, details in summary_per_year_month.items %}
++	  <td colspan="{{ details.months|length }}">{{ details.total|floatformat:2 }}</td>
++	{% endfor %}
++  </tr>
++</table>
++<br>
++
++
++<table border="1">
++  <caption>Summary per year-month (vertical grow) </caption>
++  {% for year, details in summary_per_year_month.items %}
++	<tr>
++	  <th rowspan="{{ details.months|length|add:2 }}">{{year}}</th>
++	  <th>Month</th>
++	  <th>Total</th>
++	</tr>
++  {% for month, total in details.months %}
++	<tr>
++	  <td>{{ month }}</td>
++	  <td>{{ total|floatformat:2 }}</td>
++	</tr>
++  {% endfor %}
++  <tr>
++	<th>Per year:</th>
++	<td>{{ details.total|floatformat:2 }}</td>
++  </tr>
++  {% endfor %}
++</table>
+ {% endblock %}
+diff --git a/expenses/urls.py b/expenses/urls.py
+index 4ae9779..9d95820 100644
+--- a/expenses/urls.py
++++ b/expenses/urls.py
+@@ -50,4 +50,12 @@ urlpatterns = [
+             template_name='generic_delete.html'
+          ),
+          name='category-delete'),
++    path('category/<int:pk>/edit/',
++         UpdateView.as_view(
++            model=Category,
++            fields='__all__',
++            success_url=reverse_lazy('expenses:category-list'),
++            template_name='generic_update.html'
++         ),
++         name='category-edit'),
+ ]
+diff --git a/expenses/views.py b/expenses/views.py
+index aefaae9..0e39f3a 100644
+--- a/expenses/views.py
++++ b/expenses/views.py
+@@ -1,30 +1,115 @@
++from django.shortcuts import redirect
++from django.urls import reverse
+ from django.views.generic.list import ListView
+ 
+ from .forms import ExpenseSearchForm
+ from .models import Expense, Category
+-from .reports import summary_per_category
++from .reports import expenses_summary
++
++
++def save_filtering_parameters(request, parameters):
++    """
++    Use to store filtering parameters in request session.
++    """
++    request.session['filterings'] = parameters.urlencode()
++
++
++def retrieve_filtering_parameters(request):
++    """
++    Use to retrieve filtering parameters from session. If it is a new session parameters will be generated.
++    Default parameters should fill entire Category Choice Field in the ExpenseSearchForm.
++    """
++    if 'filterings' in request.session:
++        params = request.session['filterings']
++    else:
++        params = '&'.join(
++            f"categories={v}" for v in ExpenseSearchForm.category_choices().keys())
++    return params
++
++
++def filter_expenses_queryset(queryset, params):
++    """
++    :param queryset: Expenses Queryset,
++    :param params: dict of parameters to filter queryset. Can be obtained from ExpenseSearchForm.
++    """
++    name = params.get('name', '').strip()
++    if name:
++        queryset = queryset.filter(name__icontains=name)
++
++    from_date, to_date = params.get('from_date'), params.get('to_date')
++    if from_date:
++        queryset = queryset.filter(date__gte=from_date)
++
++    if to_date:
++        queryset = queryset.filter(date__lt=to_date)
++
++    categories = params.get('categories')
++    return queryset.filter(category__id__in=categories)
++
++
++def split_to_parameters_ordering_from(query_params):
++    """
++    Split query parameters into filtering parameters and ordering (sorting) parameters.
++    Page for pagination is removed to prevent repetition.
++    """
++    parameters = query_params.copy()
++    parameters.pop('page', True)
++
++    ordering = query_params.copy()
++    ordering.clear()
++    if 'order_by' in parameters:
++        ordering['order_by'] = parameters.pop('order_by')[0]
++    return parameters, ordering
++
++
++def reverse_with_params(viewname, encoded_params):
++    """
++    Return reverse with encoded parameters.
++    """
++    return f"{reverse(viewname)}?{encoded_params}"
+ 
+ 
+ class ExpenseListView(ListView):
+     model = Expense
+     paginate_by = 5
+ 
++    def get(self, *args, **kwargs):
++        query_params = self.request.GET
++
++        # initial filtering query parameters, redirect for apply filter
++        if 'categories' not in query_params:
++            filtering_params = retrieve_filtering_parameters(self.request)
++            return redirect(reverse_with_params('expenses:expense-list', filtering_params))
++
++        return super().get(*args, **kwargs)
++
+     def get_context_data(self, *, object_list=None, **kwargs):
++        query_params = self.request.GET
+         queryset = object_list if object_list is not None else self.object_list
+ 
+-        form = ExpenseSearchForm(self.request.GET)
++        form = ExpenseSearchForm(query_params)
+         if form.is_valid():
+-            name = form.cleaned_data.get('name', '').strip()
+-            if name:
+-                queryset = queryset.filter(name__icontains=name)
++            queryset = filter_expenses_queryset(queryset, form.cleaned_data)
++
++        parameters, ordering = split_to_parameters_ordering_from(query_params)
++        summary = expenses_summary(queryset)
+ 
++        save_filtering_parameters(self.request, parameters)
+         return super().get_context_data(
++            parameters=parameters.urlencode(),
++            ordering=ordering.urlencode(),
+             form=form,
+             object_list=queryset,
+-            summary_per_category=summary_per_category(queryset),
++            summary_per_category=summary['per_category'],
++            summary_per_year_month=summary['per_year_month'],
++            total_amount_spent=summary['total'],
+             **kwargs)
+ 
++    def get_ordering(self):
++        order_by = self.request.GET.get('order_by', '')
++        return order_by
++
++
+ class CategoryListView(ListView):
+     model = Category
+     paginate_by = 5
+-
+diff --git a/project/templates/_pagination.html b/project/templates/_pagination.html
+index 6398e29..0fde169 100644
+--- a/project/templates/_pagination.html
++++ b/project/templates/_pagination.html
+@@ -1,8 +1,8 @@
+ <div class="pagination">
+     <span class="pagination__nav">
+         {% if page_obj.has_previous %}
+-            <a href="?page=1">&laquo; first</a>
+-            <a href="?page={{ page_obj.previous_page_number }}">previous</a>
++            <a href="?page=1&{{ parameters }}&{{ ordering }}">&laquo; first</a>
++            <a href="?page={{ page_obj.previous_page_number }}&{{ parameters }}&{{ ordering }}">previous</a>
+         {% endif %}
+ 
+         <span class="current">
+@@ -10,8 +10,8 @@
+         </span>
+ 
+         {% if page_obj.has_next %}
+-            <a href="?page={{ page_obj.next_page_number }}">next</a>
+-            <a href="?page={{ page_obj.paginator.num_pages }}">last &raquo;</a>
++            <a href="?page={{ page_obj.next_page_number }}&{{ parameters }}&{{ ordering }}">next</a>
++            <a href="?page={{ page_obj.paginator.num_pages }}&{{ parameters }}&{{ ordering }}">last &raquo;</a>
+         {% endif %}
+     </span>
+ </div>
+diff --git a/project/templates/sortable_label.html b/project/templates/sortable_label.html
+new file mode 100644
+index 0000000..974015d
+--- /dev/null
++++ b/project/templates/sortable_label.html
+@@ -0,0 +1,9 @@
++<div>
++    {{label}}
++</div>
++{% if controllers %}
++<div>
++    <button type="button" onclick="location.href='?order_by=-{{ label }}&{{ parameters }}'" {% if '-'|add:label in ordering %} disabled {% endif %}> \/ </button>
++    <button type="button" name='sorter' onclick="location.href='?order_by={{ label }}&{{ parameters }}'" {% if not '-'|add:label in ordering  and label in ordering%} disabled {% endif %}> /\ </button>
++</div>
++{% endif %}
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..3a283bf
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,3 @@
++asgiref==3.5.2
++Django==4.1.1
++sqlparse==0.4.3
