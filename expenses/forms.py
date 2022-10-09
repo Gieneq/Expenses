@@ -5,8 +5,7 @@ from .models import Expense, Category
 
 
 class ExpenseSearchForm(forms.ModelForm):
-    _MIN_YEAR, _MAX_YEAR = 1980, 2020  # TODO better make tuple and reverse range
-
+    _MIN_YEAR, _MAX_YEAR = 1980, 2022
     from_date = forms.DateField(required=False, widget=forms.SelectDateWidget(years=range(_MIN_YEAR, _MAX_YEAR + 1)))
     to_date = forms.DateField(required=False, widget=forms.SelectDateWidget(years=range(_MAX_YEAR, _MIN_YEAR - 1, -1)))
     categories = forms.MultipleChoiceField(required=False, widget=forms.CheckboxSelectMultiple)
@@ -22,4 +21,7 @@ class ExpenseSearchForm(forms.ModelForm):
 
     @staticmethod
     def category_choices():
+        """
+        Dynamically retrieve choices OrderedDict for Category Selection Choice Fields and similar.
+        """
         return OrderedDict([(category.id, category.name) for category in Category.objects.order_by('name')])
