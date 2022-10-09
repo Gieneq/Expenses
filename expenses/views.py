@@ -1,4 +1,5 @@
-from django.http import QueryDict
+from django.shortcuts import redirect
+from django.urls import reverse
 from django.views.generic.list import ListView
 
 from .forms import ExpenseSearchForm
@@ -10,11 +11,21 @@ class ExpenseListView(ListView):
     model = Expense
     paginate_by = 5
 
-    def get_context_data(self, *, object_list=None, **kwargs):
+    def get(self, *args, **kwargs):
         query_params = self.request.GET
-        # print('$GET$', query_params)
-        # print('$kwargs$', kwargs)
+        if 'categories' not in query_params:
+            if 'filterings' in self.request.session:
+                # retrieve from session
+                filtering_query_params = self.request.session['filterings']
+            else:
+                filtering_query_params = '&'.join(
+                    f"categories={v}" for v in ExpenseSearchForm.category_choices().keys())
+            return redirect(reverse('expenses:expense-list') + f'?{filtering_query_params}')
 
+        return super().get(*args, **kwargs)
+
+    def get_context_data(self, *, object_list=None, **kwargs):
+        query_params = self.request.GET.copy()
         queryset = object_list if object_list is not None else self.object_list
 
         form = ExpenseSearchForm(query_params)
@@ -35,8 +46,6 @@ class ExpenseListView(ListView):
                 queryset = queryset.filter(date__lt=to_date)
 
             categories = cdata.get('categories')
-            # print(categories)
-            # FIXME not working with pagination and ordering
             queryset = queryset.filter(category__id__in=categories)
 
         parameters = query_params.copy()
@@ -47,15 +56,9 @@ class ExpenseListView(ListView):
         if 'order_by' in parameters:
             ordering['order_by'] = parameters.pop('order_by')[0]
 
-        # print(parameters)
-        # print(ordering)
-
         summary_ym = summary_per_year_month(queryset)
-
-        print('--summary YM-->>', summary_ym)
-
         summary = summary_per_category(queryset)
-        print('--summary C-->>', summary)
+        self.request.session['filterings'] = parameters.urlencode()
         return super().get_context_data(
             parameters=parameters.urlencode(),
             ordering=ordering.urlencode(),
@@ -74,14 +77,3 @@ class ExpenseListView(ListView):
 class CategoryListView(ListView):
     model = Category
     paginate_by = 5
-
-    # def get_context_data(self, *, object_list=None, **kwargs):
-    #     queryset = object_list if object_list is not None else self.object_list
-    #     items = list(queryset.all())
-        # it1 = items[0]
-        #
-        # for item in items:
-        #     print(' * ',    item, item.name, item.expense_set.all().count())
-        # return super().get_context_data(
-        #     object_list=queryset,
-        #     **kwargs)
