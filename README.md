@@ -5,6 +5,7 @@ Example of using Django template with filtering. Add expenses, categories and se
 ## Filtering & sorting
 
 The filtering using Djnago's querysets and filters. Sorting buttons done using separate temple to add direction buttons as table's labels.
+
 ![](img/filtering.png)
 
 ## Summary
