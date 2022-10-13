@@ -4,6 +4,6 @@
 {% if controllers %}
 <div>
     <button type="button" onclick="location.href='?order_by=-{{ label }}&{{ parameters }}'" {% if '-'|add:label in ordering %} disabled {% endif %}> \/ </button>
-    <button type="button" name='sorter' onclick="location.href='?order_by={{ label }}&{{ parameters }}'" {% if not '-'|add:label in ordering  and label in ordering%} disabled {% endif %}> /\ </button>
+    <button type="button" name='sorter' onclick="location.href='?order_by={{ label }}&{{ parameters }}'" {% if not '-'|add:label in ordering  and label in ordering%} disabled {% endif %}> /\git  </button>
 </div>
 {% endif %}
